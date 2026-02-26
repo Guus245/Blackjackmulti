@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Blackjack Web</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0a3d62;
+      color: #fff;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { color: #f4d03f; }
+    #info { font-size: 1.2rem; margin: 20px 0; }
+    button {
+      padding: 12px 24px;
+      margin: 8px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      background: #27ae60;
+      color: white;
+      border: none;
+      border-radius: 6px;
+    }
+    button:hover { background: #219653; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    #cards { 
+      font-size: 2.4rem; 
+      margin: 20px 0; 
+      min-height: 80px;
+    }
+    input, select { padding: 10px; font-size: 1rem; margin: 8px; }
+  </style>
+</head>
+<body>
+
+<h1>♠ Blackjack ♣</h1>
+
+<div id="setup">
+  <input id="playerName" placeholder="Je naam" value="Speler 1" />
+  <button onclick="initGame()">Start / Inloggen</button>
+</div>
+
+<div id="game" style="display:none;">
+  <div id="info">
+    Saldo: <span id="balance">—</span> | Inzet: <span id="bet">0</span>
+  </div>
+
+  <div>
+    <input id="code" placeholder="Code invullen (of admin)" />
+    <button onclick="redeemCode()">Code inwisselen</button>
+  </div>
+
+  <div>
+    <input id="betInput" type="number" min="1" placeholder="Inzet" />
+    <button onclick="startRound()">Nieuwe ronde</button>
+  </div>
+
+  <h3>Jouw kaarten</h3>
+  <div id="playerCards" class="cards"></div>
+  <div id="playerValue"></div>
+
+  <h3>Dealer</h3>
+  <div id="dealerCards" class="cards"></div>
+  <div id="dealerValue"></div>
+
+  <div id="result" style="font-size:1.4rem; margin:20px 0;"></div>
+
+  <button id="hitBtn" onclick="hit()" disabled>Hit</button>
+  <button id="standBtn" onclick="stand()" disabled>Stand</button>
+</div>
+
+<script>
+let gameActive = false;
+
+async function apiCall(endpoint, method = 'POST', body = null) {
+  const res = await fetch(`/api/${endpoint}`, {
+    method,
+    headers: {'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : null
+  });
+  return res.json();
+}
+
+async function initGame() {
+  const name = document.getElementById('playerName').value.trim() || 'Speler';
+  const data = await apiCall('init', 'POST', {name});
+  document.getElementById('balance').innerText = data.balance;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  updateButtons(false);
+}
+
+async function redeemCode() {
+  const code = document.getElementById('code').value.trim();
+  if (!code) return alert('Voer een code in');
+  const data = await apiCall('redeem', 'POST', {code});
+  if (data.success) {
+    document.getElementById('balance').innerText = data.balance;
+    alert(data.message);
+  } else if (data.admin) {
+    alert('Admin mode! (nog niet volledig)');
+  } else {
+    alert(data.error || 'Ongeldige code');
+  }
+}
+
+async function startRound() {
+  const bet = parseInt(document.getElementById('betInput').value) || 0;
+  if (bet < 1) return alert('Minimaal 1 inzetten');
+
+  const data = await apiCall('new_round', 'POST', {bet});
+  if (data.error) return alert(data.error);
+
+  document.getElementById('balance').innerText = data.balance;
+  document.getElementById('bet').innerText = data.bet;
+
+  showCards(data.player_hand, 'playerCards', data.player_value);
+  showCards([data.dealer_visible[0], '?'], 'dealerCards');
+
+  updateButtons(true);
+  document.getElementById('result').innerText = '';
+}
+
+function showCards(cards, elementId, value = null) {
+  const el = document.getElementById(elementId);
+  el.innerHTML = cards.map(c => `<span style="margin:0 8px;">${c[0]}${c[1]}</span>`).join('');
+  if (value !== null && elementId === 'playerCards') {
+    document.getElementById('playerValue').innerText = `Waarde: ${value}`;
+  }
+  if (value !== null && elementId === 'dealerCards') {
+    document.getElementById('dealerValue').innerText = `Waarde: ${value}`;
+  }
+}
+
+async function hit() {
+  const data = await apiCall('hit');
+  showCards(data.player_hand, 'playerCards', data.player_value);
+
+  if (data.done) {
+    updateButtons(false);
+    document.getElementById('result').innerText = data.message;
+  }
+}
+
+async function stand() {
+  updateButtons(false);
+  const data = await apiCall('stand');
+  showCards(data.player_hand, 'playerCards', data.player_value);
+  showCards(data.dealer_hand, 'dealerCards', data.dealer_value);
+  document.getElementById('result').innerText = `${data.result} (${data.winnings > 0 ? '+' : ''}${data.winnings})`;
+  document.getElementById('balance').innerText = data.balance;
+}
+
+function updateButtons(active) {
+  document.getElementById('hitBtn').disabled = !active;
+  document.getElementById('standBtn').disabled = !active;
+}
+</script>
+
+</body>
+</html>
